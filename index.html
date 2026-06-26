@@ -213,6 +213,18 @@ tr.lead td{background:rgba(245,200,75,.07)}
 .pod{cursor:pointer}
 .pod:focus-visible{outline:2px solid var(--gold);outline-offset:2px}
 
+/* live palpites */
+.live-title{font-weight:900;text-transform:uppercase;letter-spacing:.04em;font-size:1rem;margin:0 0 14px;display:flex;align-items:center;gap:8px}
+.live-list{display:grid;gap:8px;max-height:360px;overflow-y:auto}
+.live-empty{color:var(--muted);font-size:.9rem;margin:0;padding:6px 0}
+.live-item{display:grid;grid-template-columns:1fr auto;grid-template-areas:"name score" "meta meta";gap:2px 10px;
+  padding:11px 14px;border-radius:11px;background:rgba(0,0,0,.30);border:1px solid rgba(255,255,255,.05)}
+.li-name{grid-area:name;font-weight:900;letter-spacing:.01em}
+.li-score{grid-area:score;font-weight:900;font-variant-numeric:tabular-nums;font-size:1.05rem;white-space:nowrap}
+.li-score i{color:var(--gold);font-style:normal;margin:0 2px}
+.li-meta{grid-area:meta;color:var(--muted);font-size:.7rem;text-transform:uppercase;letter-spacing:.06em;font-weight:900}
+.newtag{font-size:.58rem;background:rgba(31,158,74,.3);color:#9af0b8;border:1px solid rgba(31,158,74,.5);padding:1px 6px;border-radius:999px;margin-left:4px;text-transform:uppercase;letter-spacing:.08em}
+
 /* ---------- countdown / next match ---------- */
 .next{display:grid;grid-template-columns:1.1fr 1fr;gap:24px;align-items:stretch}
 .next .when{padding:30px}
@@ -470,6 +482,11 @@ footer .brand{font-weight:900;color:var(--ink);letter-spacing:.06em}
       <button type="submit" class="btn btn-gold" style="width:100%;justify-content:center;margin-top:8px">Registrar palpite ✦</button>
       <p class="form-note" id="formNote">Os palpites de um jogo encerram no apito inicial — depois disso ele some desta lista.</p>
     </form>
+
+    <div class="panel" id="livePanel" style="padding:22px;max-width:560px;margin-top:18px">
+      <h3 class="live-title">Palpites recebidos <span class="tick" id="liveCount"></span></h3>
+      <div id="liveList" class="live-list"></div>
+    </div>
   </div>
 </section>
 
@@ -663,31 +680,50 @@ footer .brand{font-weight:900;color:var(--ink);letter-spacing:.06em}
   }
   var resultByN={}; GAMES.forEach(function(g){ resultByN[g.n]=g.result; });
 
-  // aggregate per person
-  var agg={};
-  TICKETS.forEach(function(t){
-    if(!agg[t.name]) agg[t.name]={name:t.name,pts:0,tickets:[]};
-    agg[t.name].tickets.push(t);
-    for(var k in t.g){ agg[t.name].pts += pointsFor(t.g[k], resultByN[k]); }
-  });
-  var ranking=Object.keys(agg).map(function(k){return agg[k];})
-    .sort(function(a,b){ return b.pts-a.pts || b.tickets.length-a.tickets.length || a.name.localeCompare(b.name); });
+  function esc(s){ return String(s).replace(/[&<>"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]; }); }
 
-  /* ---------- render leaderboard ---------- */
+  /* ---------- live palpites (Supabase + fallback local) ---------- */
+  var SUPA_URL="__SUPABASE_URL__";
+  var SUPA_KEY="__SUPABASE_KEY__";
+  var SUPA_OK=/^https:\/\//.test(SUPA_URL) && SUPA_KEY.length>20;
+  var liveRows=[]; // {name,game,home,away,created_at}
+  function liveAsTickets(){
+    return liveRows.map(function(r){ var g={}; g[r.game]=[+r.home,+r.away]; return {name:String(r.name),g:g,live:true}; });
+  }
+  function allTickets(){ return TICKETS.concat(liveAsTickets()); }
+  function gameByN(n){ for(var i=0;i<GAMES.length;i++){ if(GAMES[i].n==n) return GAMES[i]; } return null; }
+  function fmtAgo(iso){
+    if(!iso) return 'agora';
+    var s=Math.floor((Date.now()-new Date(iso).getTime())/1000);
+    if(s<60) return 'agora'; if(s<3600) return Math.floor(s/60)+' min';
+    if(s<86400) return Math.floor(s/3600)+'h';
+    return new Date(iso).toLocaleDateString('pt-BR',{day:'2-digit',month:'2-digit'});
+  }
+  function renderLive(){
+    var wrap=document.getElementById('liveList'); if(!wrap) return;
+    var cnt=document.getElementById('liveCount');
+    if(cnt) cnt.textContent=liveRows.length? liveRows.length:'';
+    var rows=liveRows.slice().reverse();
+    if(!rows.length){
+      wrap.innerHTML='<p class="live-empty">Nenhum palpite enviado ainda'+(SUPA_OK?'':' (modo local)')+'. Seja o primeiro a chutar! ⚽</p>';
+      return;
+    }
+    wrap.innerHTML=rows.map(function(r){
+      var g=gameByN(r.game), opp=g?g.opp:('Jogo '+r.game);
+      return '<div class="live-item">'+
+        '<span class="li-name">'+esc(r.name)+'</span>'+
+        '<span class="li-score">🇧🇷 '+(+r.home)+' <i>×</i> '+(+r.away)+'</span>'+
+        '<span class="li-meta">vs '+esc(opp)+' · '+fmtAgo(r.created_at)+'</span>'+
+      '</div>';
+    }).join('');
+  }
+
+  /* ---------- leaderboard (rebuildable) ---------- */
   var medals=["🥇","🥈","🥉"];
   var podium=document.getElementById('podium');
+  var body=document.getElementById('lbBody');
   var order=["second","first","third"], idx=[1,0,2];
-  for(var pI=0;pI<3;pI++){
-    var r=ranking[idx[pI]]; if(!r) continue;
-    var d=document.createElement('div'); d.className='pod '+order[pI];
-    d.dataset.idx=idx[pI];
-    d.innerHTML='<div class="crown">'+(idx[pI]===0?'👑':'')+'</div>'+
-      '<div class="medal">'+medals[idx[pI]]+'</div>'+
-      '<div class="nm">'+r.name+'</div>'+
-      '<div class="pts">'+r.pts+'</div>'+
-      '<div class="meta">'+r.tickets.length+' bilhete'+(r.tickets.length>1?'s':'')+' · ver palpites</div>';
-    podium.appendChild(d);
-  }
+
   function detailHTML(person){
     var out='<div class="detail-wrap">';
     person.tickets.forEach(function(tk,ti){
@@ -697,7 +733,7 @@ footer .brand{font-weight:900;color:var(--ink);letter-spacing:.06em}
         var pl=!!g.result, pts=pointsFor(gu,g.result); if(pl) sub+=pts;
         var cls=!pl?'pending':('p'+pts);
         var lbl=!pl?'aguardando':(pts+' pt'+(pts===1?'':'s'));
-        cells+='<div class="guess"><span class="gj">Jogo '+g.n+' · '+g.opp+'</span>'+
+        cells+='<div class="guess"><span class="gj">Jogo '+g.n+' · '+g.opp+(tk.live?' <em class="newtag">novo</em>':'')+'</span>'+
           '<span class="gs">'+gu[0]+'<i>×</i>'+gu[1]+'</span>'+
           '<span class="gp '+cls+'">'+lbl+'</span></div>';
       });
@@ -706,21 +742,6 @@ footer .brand{font-weight:900;color:var(--ink);letter-spacing:.06em}
     });
     return out+'</div>';
   }
-  var body=document.getElementById('lbBody');
-  ranking.forEach(function(r,i){
-    var tr=document.createElement('tr'); tr.className='lb-row'+(i===0?' lead':'');
-    tr.setAttribute('role','button'); tr.tabIndex=0; tr.setAttribute('aria-expanded','false'); tr.dataset.idx=i;
-    tr.innerHTML='<td class="num"><span class="pos">'+(i+1)+'</span></td>'+
-      '<td><span class="pname">'+r.name+'</span>'+(i===0?'<span class="tick">líder</span>':'')+'<span class="chev">›</span></td>'+
-      '<td class="num">'+r.tickets.length+'</td>'+
-      '<td class="num"><span class="bigpts">'+r.pts+'</span></td>';
-    var dtr=document.createElement('tr'); dtr.className='lb-detail'; dtr.dataset.idx=i;
-    dtr.innerHTML='<td colspan="4">'+detailHTML(r)+'</td>';
-    function toggle(){ tr.setAttribute('aria-expanded', dtr.classList.toggle('open')?'true':'false'); }
-    tr.addEventListener('click',toggle);
-    tr.addEventListener('keydown',function(e){ if(e.key==='Enter'||e.key===' '){ e.preventDefault(); toggle(); } });
-    body.appendChild(tr); body.appendChild(dtr);
-  });
   function openByIdx(i){
     var tr=document.querySelector('.lb-row[data-idx="'+i+'"]');
     var dtr=document.querySelector('.lb-detail[data-idx="'+i+'"]');
@@ -729,12 +750,77 @@ footer .brand{font-weight:900;color:var(--ink);letter-spacing:.06em}
     document.getElementById('classificacao').scrollIntoView({behavior:'smooth',block:'start'});
     tr.classList.remove('flash'); void tr.offsetWidth; tr.classList.add('flash');
   }
-  Array.prototype.forEach.call(podium.querySelectorAll('.pod'),function(p){
-    p.setAttribute('role','button'); p.tabIndex=0;
-    function go(){ openByIdx(+p.dataset.idx); }
-    p.addEventListener('click',go);
-    p.addEventListener('keydown',function(e){ if(e.key==='Enter'||e.key===' '){ e.preventDefault(); go(); } });
-  });
+  function rebuildBoard(){
+    var agg={};
+    allTickets().forEach(function(t){
+      if(!agg[t.name]) agg[t.name]={name:t.name,pts:0,tickets:[]};
+      agg[t.name].tickets.push(t);
+      for(var k in t.g){ agg[t.name].pts += pointsFor(t.g[k], resultByN[k]); }
+    });
+    var ranking=Object.keys(agg).map(function(k){return agg[k];})
+      .sort(function(a,b){ return b.pts-a.pts || b.tickets.length-a.tickets.length || a.name.localeCompare(b.name); });
+
+    podium.innerHTML=''; body.innerHTML='';
+    for(var pI=0;pI<3;pI++){
+      var r=ranking[idx[pI]]; if(!r) continue;
+      var d=document.createElement('div'); d.className='pod '+order[pI]; d.dataset.idx=idx[pI];
+      d.innerHTML='<div class="crown">'+(idx[pI]===0?'👑':'')+'</div>'+
+        '<div class="medal">'+medals[idx[pI]]+'</div>'+
+        '<div class="nm">'+esc(r.name)+'</div>'+
+        '<div class="pts">'+r.pts+'</div>'+
+        '<div class="meta">'+r.tickets.length+' bilhete'+(r.tickets.length>1?'s':'')+' · ver palpites</div>';
+      podium.appendChild(d);
+    }
+    ranking.forEach(function(r,i){
+      var tr=document.createElement('tr'); tr.className='lb-row'+(i===0?' lead':'');
+      tr.setAttribute('role','button'); tr.tabIndex=0; tr.setAttribute('aria-expanded','false'); tr.dataset.idx=i;
+      tr.innerHTML='<td class="num"><span class="pos">'+(i+1)+'</span></td>'+
+        '<td><span class="pname">'+esc(r.name)+'</span>'+(i===0?'<span class="tick">líder</span>':'')+'<span class="chev">›</span></td>'+
+        '<td class="num">'+r.tickets.length+'</td>'+
+        '<td class="num"><span class="bigpts">'+r.pts+'</span></td>';
+      var dtr=document.createElement('tr'); dtr.className='lb-detail'; dtr.dataset.idx=i;
+      dtr.innerHTML='<td colspan="4">'+detailHTML(r)+'</td>';
+      function toggle(){ tr.setAttribute('aria-expanded', dtr.classList.toggle('open')?'true':'false'); }
+      tr.addEventListener('click',toggle);
+      tr.addEventListener('keydown',function(e){ if(e.key==='Enter'||e.key===' '){ e.preventDefault(); toggle(); } });
+      body.appendChild(tr); body.appendChild(dtr);
+    });
+    Array.prototype.forEach.call(podium.querySelectorAll('.pod'),function(p){
+      p.setAttribute('role','button'); p.tabIndex=0;
+      function go(){ openByIdx(+p.dataset.idx); }
+      p.addEventListener('click',go);
+      p.addEventListener('keydown',function(e){ if(e.key==='Enter'||e.key===' '){ e.preventDefault(); go(); } });
+    });
+  }
+
+  function saveLocal(){ try{ localStorage.setItem('nfk_palpites',JSON.stringify(liveRows)); }catch(e){} }
+  function loadLive(){
+    if(SUPA_OK){
+      fetch(SUPA_URL+"/rest/v1/palpites?select=name,game,home,away,created_at&order=created_at.asc",
+        {headers:{apikey:SUPA_KEY,Authorization:"Bearer "+SUPA_KEY}})
+       .then(function(r){ return r.ok?r.json():[]; })
+       .then(function(rows){ if(Array.isArray(rows)) liveRows=rows; rebuildBoard(); renderLive(); })
+       .catch(function(){ rebuildBoard(); renderLive(); });
+    } else {
+      try{ liveRows=JSON.parse(localStorage.getItem('nfk_palpites')||'[]'); }catch(e){ liveRows=[]; }
+      rebuildBoard(); renderLive();
+    }
+  }
+  function sendPalpite(p, done){
+    if(SUPA_OK){
+      fetch(SUPA_URL+"/rest/v1/palpites",
+        {method:"POST",headers:{apikey:SUPA_KEY,Authorization:"Bearer "+SUPA_KEY,"Content-Type":"application/json",Prefer:"return=representation"},
+         body:JSON.stringify({name:p.name,game:p.game,home:p.home,away:p.away})})
+       .then(function(r){ return r.ok?r.json():null; })
+       .then(function(){ loadLive(); done&&done(true); })
+       .catch(function(){ done&&done(false); });
+    } else {
+      liveRows.push({name:p.name,game:p.game,home:p.home,away:p.away,created_at:new Date().toISOString()});
+      saveLocal(); rebuildBoard(); renderLive(); done&&done(true);
+    }
+  }
+  loadLive();
+  if(SUPA_OK) setInterval(loadLive, 30000);
 
   /* ---------- render matches ---------- */
   var mWrap=document.getElementById('matches');
@@ -856,17 +942,28 @@ footer .brand{font-weight:900;color:var(--ink);letter-spacing:.06em}
     else cx2.clearRect(0,0,cc.width,cc.height);
   }
   var toast=document.getElementById('toast');
-  document.getElementById('palpiteForm').addEventListener('submit',function(e){
+  function showToast(msg,ms){ toast.textContent=msg; toast.classList.add('show'); setTimeout(function(){ toast.classList.remove('show'); }, ms||2800); }
+  var pForm=document.getElementById('palpiteForm'), pBtn=pForm.querySelector('button[type="submit"]');
+  pForm.addEventListener('submit',function(e){
     e.preventDefault();
     var name=document.getElementById('fName').value.trim();
-    if(!name) return;
-    burst();
-    toast.textContent='Palpite de '+name.split(' ')[0]+' registrado! ⚽';
-    toast.classList.add('show');
-    setTimeout(function(){ toast.classList.remove('show'); },2600);
-    this.reset();
-    document.getElementById('fHome').value=0; document.getElementById('fAway').value=0;
-    syncOppLabel();
+    var game=parseInt(document.getElementById('fGame').value,10);
+    var home=parseInt(document.getElementById('fHome').value,10);
+    var away=parseInt(document.getElementById('fAway').value,10);
+    if(!name||!game||isNaN(home)||isNaN(away)) return;
+    var lbl=pBtn.textContent; pBtn.disabled=true; pBtn.textContent='Enviando…';
+    sendPalpite({name:name,game:game,home:home,away:away}, function(ok){
+      pBtn.disabled=false; pBtn.textContent=lbl;
+      if(ok){
+        burst();
+        showToast('Palpite de '+name.split(' ')[0]+' registrado! ⚽');
+        document.getElementById('fName').value=''; document.getElementById('fHome').value=0; document.getElementById('fAway').value=0;
+        syncOppLabel();
+        var lp=document.getElementById('livePanel'); if(lp) lp.scrollIntoView({behavior:'smooth',block:'nearest'});
+      } else {
+        showToast('Ops, não consegui enviar agora. Tenta de novo em instantes.',3200);
+      }
+    });
   });
 
   /* ---------- reveal on scroll ---------- */
