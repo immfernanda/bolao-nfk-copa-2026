@@ -252,6 +252,7 @@ tr.lead td{background:rgba(245,200,75,.07)}
   letter-spacing:.14em;font-size:.74rem;padding:8px 16px;border-radius:999px;margin-top:4px}
 .status.open{color:#06160d;background:linear-gradient(180deg,#7ef0a4,var(--br-green))}
 .status.closed{color:#fff;background:linear-gradient(180deg,#e0666f,#9c2731)}
+.status.wait{color:#06160d;background:linear-gradient(180deg,#ffe9a8,var(--gold))}
 .status .dot{width:8px;height:8px;border-radius:50%;background:currentColor}
 .status.open .dot{animation:blink 1.2s ease-in-out infinite}
 @keyframes blink{50%{opacity:.25}}
@@ -658,7 +659,11 @@ footer .brand{font-weight:900;color:var(--ink);letter-spacing:.06em}
     {n:1,opp:"Marrocos",flag:"🇲🇦",city:"Nova York",dt:"2026-06-13T19:00:00-03:00",result:[1,1]},
     {n:2,opp:"Haiti",flag:"🇭🇹",city:"Filadélfia",dt:"2026-06-19T21:30:00-03:00",result:[3,0]},
     {n:3,opp:"Escócia",flag:'<svg viewBox="0 0 30 20" width="30" height="20" style="vertical-align:middle;border-radius:3px"><rect width="30" height="20" fill="#005EB8"/><path d="M0 0L30 20M30 0L0 20" stroke="#fff" stroke-width="4"/></svg>',city:"Miami",dt:"2026-06-24T19:00:00-03:00",result:[3,0]},
-    {n:4,opp:"Japão",flag:"🇯🇵",city:"Houston",round:"16 avos de final",dt:"2026-06-29T14:00:00-03:00",result:null}
+    {n:4,opp:"Japão",flag:"🇯🇵",city:"Houston",round:"16 avos de final",dt:"2026-06-29T14:00:00-03:00",result:null},
+    {n:5,opp:"A definir",flag:"🏆",city:"Nova Jersey",round:"Oitavas de final",dt:"2026-07-05T16:00:00-03:00",result:null},
+    {n:6,opp:"A definir",flag:"🏆",city:"Miami",round:"Quartas de final",dt:"2026-07-11T16:00:00-03:00",result:null},
+    {n:7,opp:"A definir",flag:"🏆",city:"Atlanta",round:"Semifinal",dt:"2026-07-15T16:00:00-03:00",result:null},
+    {n:8,opp:"A definir",flag:"🏆",city:"Nova Jersey",round:"Final",dt:"2026-07-19T16:00:00-03:00",result:null}
   ];
   // each ticket: name + guesses indexed by game n (1..4)
   var TICKETS=[
@@ -860,7 +865,7 @@ footer .brand{font-weight:900;color:var(--ink);letter-spacing:.06em}
     }
   }
   function setLiveHeader(){
-    var og=nextGame();
+    var og=openGame();
     var tt=document.getElementById('liveTitleText'), sb=document.getElementById('liveSub');
     if(og && tt){
       tt.textContent='Palpites · Brasil × '+og.opp;
@@ -869,8 +874,8 @@ footer .brand{font-weight:900;color:var(--ink);letter-spacing:.06em}
         dt.toLocaleDateString('pt-BR',{day:'2-digit',month:'2-digit'})+' às '+
         dt.toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'})+' — acompanhe os palpites chegando ao vivo.';
     } else if(tt){
-      tt.textContent='Palpites recebidos';
-      if(sb) sb.textContent='Os palpites reabrem quando o próximo jogo do Brasil for definido.';
+      tt.textContent='Palpites do próximo jogo';
+      if(sb) sb.textContent='Os palpites abrem quando o adversário do Brasil for confirmado.';
     }
   }
   setLiveHeader();
@@ -917,6 +922,12 @@ footer .brand{font-weight:900;color:var(--ink);letter-spacing:.06em}
     for(var i=0;i<GAMES.length;i++){ if(new Date(GAMES[i].dt).getTime()>now) return GAMES[i]; }
     return null;
   }
+  function defined(g){ return !!(g && g.opp && g.opp.toLowerCase().indexOf('a definir')<0); }
+  function openGame(){
+    var now=Date.now();
+    for(var i=0;i<GAMES.length;i++){ if(new Date(GAMES[i].dt).getTime()>now && defined(GAMES[i])) return GAMES[i]; }
+    return null;
+  }
   var nx=nextGame();
   var els={D:cdD,H:cdH,M:cdM,S:cdS};
   function pad(n){ return (n<10?'0':'')+n; }
@@ -924,18 +935,23 @@ footer .brand{font-weight:900;color:var(--ink);letter-spacing:.06em}
     var sel=document.getElementById('fGame'); sel.innerHTML='';
     var now=Date.now(), any=false;
     GAMES.forEach(function(g){
-      if(new Date(g.dt).getTime()>now){
+      if(new Date(g.dt).getTime()>now && defined(g)){
         any=true;
         var o=document.createElement('option');
         o.value=g.n; o.textContent='Jogo '+g.n+' — Brasil × '+g.opp;
         sel.appendChild(o);
       }
     });
+    var btn=document.querySelector('#palpiteForm button');
     if(!any){
-      var o=document.createElement('option'); o.textContent='Nenhum jogo aberto no momento'; o.value='';
+      var o=document.createElement('option'); o.textContent='Aguardando o próximo adversário'; o.value='';
       sel.appendChild(o); sel.disabled=true;
-      document.querySelector('#palpiteForm button').disabled=true;
-      document.getElementById('formNote').textContent='Os palpites reabrem quando o próximo jogo do Brasil for definido.';
+      if(btn) btn.disabled=true;
+      document.getElementById('formNote').textContent='Os palpites abrem assim que o adversário do próximo jogo do Brasil for confirmado.';
+    } else {
+      sel.disabled=false;
+      if(btn) btn.disabled=false;
+      document.getElementById('formNote').textContent='Os palpites de um jogo encerram no apito inicial — depois disso ele some desta lista.';
     }
     syncOppLabel();
   }
@@ -946,13 +962,20 @@ footer .brand{font-weight:900;color:var(--ink);letter-spacing:.06em}
   document.getElementById('fGame').addEventListener('change',syncOppLabel);
 
   function renderNext(){
-    if(nx){
-      document.getElementById('nxOpp').textContent = nx.opp;
-      document.getElementById('nxFlag').textContent = nx.flag;
-      var dt=new Date(nx.dt);
-      document.getElementById('nxMeta').textContent='Jogo '+nx.n+' · '+(nx.round?nx.round+' · ':'')+nx.city+' · '+
-        dt.toLocaleDateString('pt-BR',{day:'2-digit',month:'2-digit'})+' '+
-        dt.toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'})+'h';
+    if(!nx) return;
+    document.getElementById('nxOpp').textContent = nx.opp;
+    document.getElementById('nxFlag').textContent = nx.flag;
+    var dt=new Date(nx.dt);
+    document.getElementById('nxMeta').textContent='Jogo '+nx.n+' · '+(nx.round?nx.round+' · ':'')+nx.city+' · '+
+      dt.toLocaleDateString('pt-BR',{day:'2-digit',month:'2-digit'})+' '+
+      dt.toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'})+'h';
+    var st=document.getElementById('nxStatus'), big=document.getElementById('nxBig');
+    if(defined(nx)){
+      st.className='status open'; st.innerHTML='<span class="dot"></span><span>Palpites abertos</span>';
+      big.textContent='Faça seu palpite!';
+    } else {
+      st.className='status wait'; st.innerHTML='<span class="dot"></span><span>Aguardando adversário</span>';
+      big.textContent='Adversário a definir';
     }
   }
   renderNext();
