@@ -186,6 +186,13 @@ tr.lead td{background:rgba(245,200,75,.07)}
   border:1px solid var(--card-line);padding:2px 8px;border-radius:999px;margin-left:8px;font-weight:900}
 .bigpts{font-weight:900;font-size:1.05rem;font-variant-numeric:tabular-nums;color:var(--gold)}
 
+/* leaderboard view toggle */
+.lb-toggle{display:inline-flex;background:rgba(0,0,0,.3);border:1px solid var(--card-line);border-radius:999px;padding:4px;gap:4px;align-self:flex-end}
+.lb-toggle button{font-family:inherit;font-weight:900;text-transform:uppercase;letter-spacing:.07em;font-size:.7rem;
+  color:var(--muted);background:transparent;border:0;padding:9px 15px;border-radius:999px;cursor:pointer;transition:color .2s,background .2s}
+.lb-toggle button.active{color:#06160d;background:linear-gradient(180deg,var(--gold-light),var(--gold))}
+.lb-toggle button:focus-visible{outline:2px solid var(--gold);outline-offset:2px}
+
 /* clickable rows + palpite detail */
 .lb-row{cursor:pointer}
 .lb-row:focus-visible{outline:2px solid var(--gold);outline-offset:-2px}
@@ -409,7 +416,11 @@ footer .brand{font-weight:900;color:var(--ink);letter-spacing:.06em}
       <div>
         <p class="eyebrow">Tabela do bolão</p>
         <h2 class="title">Classificação geral</h2>
-        <p class="lead">Pontos somados por participante em todos os jogos disputados. Placar exato vale 3, acertar quem vence (ou o empate) vale 1. <strong style="color:var(--gold)">Toque em um nome para ver os palpites de cada jogo.</strong></p>
+        <p class="lead">Placar exato vale 3, acertar quem vence (ou o empate) vale 1. Veja <strong style="color:var(--gold)">por bilhete</strong> (como na planilha) ou <strong style="color:var(--gold)">somado por pessoa</strong> — e toque em um nome para abrir os palpites de cada jogo.</p>
+      </div>
+      <div class="lb-toggle" id="lbToggle" role="group" aria-label="Modo da classificação">
+        <button type="button" data-mode="ticket" class="active">Por bilhete</button>
+        <button type="button" data-mode="person">Por pessoa</button>
       </div>
     </div>
     <div class="podium" id="podium"></div>
@@ -417,7 +428,7 @@ footer .brand{font-weight:900;color:var(--ink);letter-spacing:.06em}
       <table class="lb">
         <thead><tr>
           <th class="num">#</th><th>Participante</th>
-          <th class="num">Bilhetes</th><th class="num">Pontos</th>
+          <th class="num" id="lbColLabel">Jogos</th><th class="num">Pontos</th>
         </tr></thead>
         <tbody id="lbBody"></tbody>
       </table>
@@ -686,8 +697,8 @@ footer .brand{font-weight:900;color:var(--ink);letter-spacing:.06em}
   function esc(s){ return String(s).replace(/[&<>"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]; }); }
 
   /* ---------- live palpites (Supabase + fallback local) ---------- */
-  var SUPA_URL="__SUPABASE_URL__";
-  var SUPA_KEY="__SUPABASE_KEY__";
+  var SUPA_URL="https://mktpehibqafntaxvzdbw.supabase.co";
+  var SUPA_KEY="sb_publishable_AECbMkN0H0TJfpRD1i23eg_ZbCsj7E9";
   var SUPA_OK=/^https:\/\//.test(SUPA_URL) && SUPA_KEY.length>20;
   var liveRows=[]; // {name,game,home,away,created_at}
   function liveAsTickets(){
@@ -753,25 +764,40 @@ footer .brand{font-weight:900;color:var(--ink);letter-spacing:.06em}
     document.getElementById('classificacao').scrollIntoView({behavior:'smooth',block:'start'});
     tr.classList.remove('flash'); void tr.offsetWidth; tr.classList.add('flash');
   }
+  var boardMode='ticket'; // 'ticket' = cada bilhete separado (planilha) | 'person' = somado por pessoa
+  function gamesCount(t){ var n=0; for(var k in t.g){ n++; } return n; }
+  function entriesFor(mode){
+    if(mode==='person'){
+      var agg={};
+      allTickets().forEach(function(t){
+        if(!agg[t.name]) agg[t.name]={name:t.name,pts:0,tickets:[],count:0};
+        agg[t.name].tickets.push(t); agg[t.name].count++;
+        for(var k in t.g){ agg[t.name].pts += pointsFor(t.g[k], resultByN[k]); }
+      });
+      return Object.keys(agg).map(function(k){return agg[k];})
+        .sort(function(a,b){ return b.pts-a.pts || b.count-a.count || a.name.localeCompare(b.name); });
+    }
+    return allTickets().map(function(t){
+      var p=0; for(var k in t.g){ p+=pointsFor(t.g[k], resultByN[k]); }
+      return {name:t.name,pts:p,tickets:[t],count:gamesCount(t)};
+    }).sort(function(a,b){ return b.pts-a.pts || b.count-a.count || a.name.localeCompare(b.name); });
+  }
   function rebuildBoard(){
-    var agg={};
-    allTickets().forEach(function(t){
-      if(!agg[t.name]) agg[t.name]={name:t.name,pts:0,tickets:[]};
-      agg[t.name].tickets.push(t);
-      for(var k in t.g){ agg[t.name].pts += pointsFor(t.g[k], resultByN[k]); }
-    });
-    var ranking=Object.keys(agg).map(function(k){return agg[k];})
-      .sort(function(a,b){ return b.pts-a.pts || b.tickets.length-a.tickets.length || a.name.localeCompare(b.name); });
+    var ranking=entriesFor(boardMode);
+    var lc=document.getElementById('lbColLabel'); if(lc) lc.textContent=(boardMode==='person')?'Bilhetes':'Jogos';
 
     podium.innerHTML=''; body.innerHTML='';
     for(var pI=0;pI<3;pI++){
       var r=ranking[idx[pI]]; if(!r) continue;
+      var meta=(boardMode==='person')
+        ? (r.count+' bilhete'+(r.count>1?'s':'')+' · ver palpites')
+        : (r.count+' jogo'+(r.count>1?'s':'')+' · ver palpite');
       var d=document.createElement('div'); d.className='pod '+order[pI]; d.dataset.idx=idx[pI];
       d.innerHTML='<div class="crown">'+(idx[pI]===0?'👑':'')+'</div>'+
         '<div class="medal">'+medals[idx[pI]]+'</div>'+
         '<div class="nm">'+esc(r.name)+'</div>'+
         '<div class="pts">'+r.pts+'</div>'+
-        '<div class="meta">'+r.tickets.length+' bilhete'+(r.tickets.length>1?'s':'')+' · ver palpites</div>';
+        '<div class="meta">'+meta+'</div>';
       podium.appendChild(d);
     }
     ranking.forEach(function(r,i){
@@ -779,7 +805,7 @@ footer .brand{font-weight:900;color:var(--ink);letter-spacing:.06em}
       tr.setAttribute('role','button'); tr.tabIndex=0; tr.setAttribute('aria-expanded','false'); tr.dataset.idx=i;
       tr.innerHTML='<td class="num"><span class="pos">'+(i+1)+'</span></td>'+
         '<td><span class="pname">'+esc(r.name)+'</span>'+(i===0?'<span class="tick">líder</span>':'')+'<span class="chev">›</span></td>'+
-        '<td class="num">'+r.tickets.length+'</td>'+
+        '<td class="num">'+r.count+'</td>'+
         '<td class="num"><span class="bigpts">'+r.pts+'</span></td>';
       var dtr=document.createElement('tr'); dtr.className='lb-detail'; dtr.dataset.idx=i;
       dtr.innerHTML='<td colspan="4">'+detailHTML(r)+'</td>';
@@ -800,7 +826,7 @@ footer .brand{font-weight:900;color:var(--ink);letter-spacing:.06em}
   function loadLive(){
     if(SUPA_OK){
       fetch(SUPA_URL+"/rest/v1/palpites?select=name,game,home,away,created_at&order=created_at.asc",
-        {headers:{apikey:SUPA_KEY,Authorization:"Bearer "+SUPA_KEY}})
+        {headers:{apikey:SUPA_KEY}})
        .then(function(r){ return r.ok?r.json():[]; })
        .then(function(rows){ if(Array.isArray(rows)) liveRows=rows; rebuildBoard(); renderLive(); })
        .catch(function(){ rebuildBoard(); renderLive(); });
@@ -812,7 +838,7 @@ footer .brand{font-weight:900;color:var(--ink);letter-spacing:.06em}
   function sendPalpite(p, done){
     if(SUPA_OK){
       fetch(SUPA_URL+"/rest/v1/palpites",
-        {method:"POST",headers:{apikey:SUPA_KEY,Authorization:"Bearer "+SUPA_KEY,"Content-Type":"application/json",Prefer:"return=representation"},
+        {method:"POST",headers:{apikey:SUPA_KEY,"Content-Type":"application/json",Prefer:"return=representation"},
          body:JSON.stringify({name:p.name,game:p.game,home:p.home,away:p.away})})
        .then(function(r){ return r.ok?r.json():null; })
        .then(function(){ loadLive(); done&&done(true); })
@@ -821,6 +847,15 @@ footer .brand{font-weight:900;color:var(--ink);letter-spacing:.06em}
       liveRows.push({name:p.name,game:p.game,home:p.home,away:p.away,created_at:new Date().toISOString()});
       saveLocal(); rebuildBoard(); renderLive(); done&&done(true);
     }
+  }
+  var lbToggle=document.getElementById('lbToggle');
+  if(lbToggle){
+    lbToggle.addEventListener('click',function(e){
+      var btn=e.target.closest('button[data-mode]'); if(!btn) return;
+      boardMode=btn.dataset.mode;
+      Array.prototype.forEach.call(lbToggle.querySelectorAll('button'),function(b){ b.classList.toggle('active', b===btn); });
+      rebuildBoard();
+    });
   }
   loadLive();
   if(SUPA_OK) setInterval(loadLive, 30000);
