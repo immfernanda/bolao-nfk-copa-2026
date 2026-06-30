@@ -659,7 +659,7 @@ footer .brand{font-weight:900;color:var(--ink);letter-spacing:.06em}
     {n:1,opp:"Marrocos",flag:"🇲🇦",city:"Nova York",dt:"2026-06-13T19:00:00-03:00",result:[1,1]},
     {n:2,opp:"Haiti",flag:"🇭🇹",city:"Filadélfia",dt:"2026-06-19T21:30:00-03:00",result:[3,0]},
     {n:3,opp:"Escócia",flag:'<svg viewBox="0 0 30 20" width="30" height="20" style="vertical-align:middle;border-radius:3px"><rect width="30" height="20" fill="#005EB8"/><path d="M0 0L30 20M30 0L0 20" stroke="#fff" stroke-width="4"/></svg>',city:"Miami",dt:"2026-06-24T19:00:00-03:00",result:[3,0]},
-    {n:4,opp:"Japão",flag:"🇯🇵",city:"Houston",round:"16 avos de final",dt:"2026-06-29T14:00:00-03:00",result:null},
+    {n:4,opp:"Japão",flag:"🇯🇵",city:"Houston",round:"16 avos de final",dt:"2026-06-29T14:00:00-03:00",result:[2,1]},
     {n:5,opp:"A definir",flag:"🏆",city:"Nova Jersey",round:"Oitavas de final",dt:"2026-07-05T16:00:00-03:00",result:null},
     {n:6,opp:"A definir",flag:"🏆",city:"Miami",round:"Quartas de final",dt:"2026-07-11T16:00:00-03:00",result:null},
     {n:7,opp:"A definir",flag:"🏆",city:"Atlanta",round:"Semifinal",dt:"2026-07-15T16:00:00-03:00",result:null},
@@ -738,7 +738,7 @@ footer .brand{font-weight:900;color:var(--ink);letter-spacing:.06em}
       var g=gameByN(r.game), opp=g?g.opp:('Jogo '+r.game);
       return '<div class="live-item">'+
         '<span class="li-name">'+esc(r.name)+'</span>'+
-        '<span class="li-score">🇧🇷 '+(+r.home)+' <i>×</i> '+(+r.away)+'</span>'+
+        '<span class="li-score">🇧🇷 '+(+r.home)+' <i>×</i> '+(+r.away)+' '+(g?g.flag:'')+'</span>'+
         '<span class="li-meta">vs '+esc(opp)+' · '+fmtAgo(r.created_at)+'</span>'+
       '</div>';
     }).join('');
@@ -760,7 +760,7 @@ footer .brand{font-weight:900;color:var(--ink);letter-spacing:.06em}
         var cls=!pl?'pending':('p'+pts);
         var lbl=!pl?'aguardando':(pts+' pt'+(pts===1?'':'s'));
         cells+='<div class="guess"><span class="gj">Jogo '+g.n+' · '+g.opp+(tk.live?' <em class="newtag">novo</em>':'')+'</span>'+
-          '<span class="gs">'+gu[0]+'<i>×</i>'+gu[1]+'</span>'+
+          '<span class="gs">🇧🇷 '+gu[0]+'<i>×</i>'+gu[1]+' '+g.flag+'</span>'+
           '<span class="gp '+cls+'">'+lbl+'</span></div>';
       });
       out+='<div class="ticket"><h5>'+(person.tickets.length>1?'Bilhete '+(ti+1)+' — ':'')+
