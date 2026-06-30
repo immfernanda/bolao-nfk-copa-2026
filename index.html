@@ -168,6 +168,9 @@ h2.title{
   background:linear-gradient(180deg,#fff,var(--gold));-webkit-background-clip:text;background-clip:text;color:transparent}
 .pod .meta{color:var(--muted);font-size:.74rem;text-transform:uppercase;letter-spacing:.1em}
 .pod .crown{position:absolute;top:8px;right:10px;font-size:.9rem;opacity:.85}
+.podium.leaders{display:flex;flex-wrap:wrap;justify-content:center;gap:14px}
+.podium.leaders .pod{flex:1 1 190px;max-width:300px;order:0;transform:none}
+.medal-inline{font-size:1.05rem;margin-left:6px;vertical-align:middle}
 
 .table-scroll{overflow-x:auto;border-radius:14px}
 table.lb{width:100%;border-collapse:collapse;min-width:460px}
@@ -803,24 +806,35 @@ footer .brand{font-weight:900;color:var(--ink);letter-spacing:.06em}
       body.innerHTML='<tr><td colspan="4" class="lb-empty">Ainda não há palpites no mata-mata. 🏆<br>Assim que a galera começar a palpitar o próximo jogo do Brasil, a classificação aparece aqui — e atualiza sozinha a cada palpite.</td></tr>';
       return;
     }
-    for(var pI=0;pI<3;pI++){
-      var r=ranking[idx[pI]]; if(!r) continue;
-      var meta=(boardMode==='person')
-        ? (r.count+' bilhete'+(r.count>1?'s':'')+' · ver palpites')
-        : (r.count+' jogo'+(r.count>1?'s':'')+' · ver palpite');
-      var d=document.createElement('div'); d.className='pod '+order[pI]; d.dataset.idx=idx[pI];
-      d.innerHTML='<div class="crown">'+(idx[pI]===0?'👑':'')+'</div>'+
-        '<div class="medal">'+medals[idx[pI]]+'</div>'+
-        '<div class="nm">'+esc(r.name)+'</div>'+
-        '<div class="pts">'+r.pts+'</div>'+
-        '<div class="meta">'+meta+'</div>';
-      podium.appendChild(d);
+    // medalhas por FAIXA de pontos (quem empata na mesma pontuação divide a medalha)
+    var tiers=[]; ranking.forEach(function(r){ if(r.pts>0 && tiers.indexOf(r.pts)<0) tiers.push(r.pts); });
+    function medalFor(p){ var i=tiers.indexOf(p); return (p>0 && i>=0 && i<3) ? ['🥇','🥈','🥉'][i] : ''; }
+    var topScore = ranking.length ? ranking[0].pts : 0;
+
+    // pódio mostra TODOS os líderes (todos empatados na maior pontuação)
+    podium.className='podium leaders';
+    if(topScore>0){
+      ranking.forEach(function(r,i){
+        if(r.pts!==topScore) return;
+        var meta=(boardMode==='person')
+          ? (r.count+' bilhete'+(r.count>1?'s':'')+' · ver palpites')
+          : (r.count+' jogo'+(r.count>1?'s':'')+' · ver palpite');
+        var d=document.createElement('div'); d.className='pod first'; d.dataset.idx=i;
+        d.innerHTML='<div class="crown">👑</div><div class="medal">🥇</div>'+
+          '<div class="nm">'+esc(r.name)+'</div>'+
+          '<div class="pts">'+r.pts+'</div>'+
+          '<div class="meta">'+meta+'</div>';
+        podium.appendChild(d);
+      });
     }
+
     ranking.forEach(function(r,i){
-      var tr=document.createElement('tr'); tr.className='lb-row'+(i===0?' lead':'');
+      var isLead=(topScore>0 && r.pts===topScore);
+      var med=medalFor(r.pts);
+      var tr=document.createElement('tr'); tr.className='lb-row'+(isLead?' lead':'');
       tr.setAttribute('role','button'); tr.tabIndex=0; tr.setAttribute('aria-expanded','false'); tr.dataset.idx=i;
       tr.innerHTML='<td class="num"><span class="pos">'+(i+1)+'</span></td>'+
-        '<td><span class="pname">'+esc(r.name)+'</span>'+(i===0?'<span class="tick">líder</span>':'')+'<span class="chev">›</span></td>'+
+        '<td><span class="pname">'+esc(r.name)+'</span>'+(med?' <span class="medal-inline">'+med+'</span>':'')+'<span class="chev">›</span></td>'+
         '<td class="num">'+r.count+'</td>'+
         '<td class="num"><span class="bigpts">'+r.pts+'</span></td>';
       var dtr=document.createElement('tr'); dtr.className='lb-detail'; dtr.dataset.idx=i;
